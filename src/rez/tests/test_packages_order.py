@@ -8,8 +8,9 @@ Test cases for package_order.py (package ordering)
 import json
 
 from rez.config import config
-from rez.package_order import NullPackageOrder, PackageOrder, PerFamilyOrder, VersionSplitPackageOrder, \
-    TimestampPackageOrder, SortedOrder, PackageOrderList, from_pod
+from rez.package_order import (
+    NullPackageOrder, PackageOrder, PerFamilyOrder, VersionSplitPackageOrder,
+    TimestampPackageOrder, SortedOrder, CustomPackageOrder, PackageOrderList, from_pod)
 from rez.packages import iter_packages
 from rez.tests.util import TestBase, TempdirMixin
 from rez.vendor.version.version import Version
@@ -287,6 +288,50 @@ class TestTimestampPackageOrder(_BaseTestPackagesOrder):
     def test_pod(self):
         """Validate we can save and load a TimestampPackageOrder to pod representation."""
         self._test_pod(TimestampPackageOrder(timestamp=3001, rank=3))
+
+
+class TestCustomPackageOrder(_BaseTestPackagesOrder):
+    """Test case for the CustomPackageOrder class"""
+
+    def test_reorder(self):
+        """Validate we can sort packages in a custom order."""
+        # Test that a pretty random order can be applied
+        self._test_reorder(CustomPackageOrder({
+            "python": ['2.6.8', '2.7.0', '2.6.0', '2.5.2'],
+        }), "python", ['2.6.8', '2.7.0', '2.6.0', '2.5.2'])
+
+        # Test that version supersets apply correctly and that the rest are sorted descending
+        self._test_reorder(CustomPackageOrder({
+            "python": ["2.6"],
+        }), "python", ['2.6.8', '2.6.0', '2.7.0', '2.5.2'])
+
+        # Test that version supersets apply correctly to multiple subsets of versions
+        self._test_reorder(CustomPackageOrder({
+            "python": ["2.6", "2.5"],
+        }), "python", ['2.6.8', '2.6.0', '2.5.2', '2.7.0'])
+
+        # Test that version supersets apply correctly to multiple subsets of versions
+        self._test_reorder(CustomPackageOrder({
+            "python": ["<=2.7", "2.5"],
+        }), "python", ['2.6.8', '2.6.0', '2.5.2', '2.7.0'])
+
+    def test_repr(self):
+        """Validate we can represent a CustomPackageOrder as a string."""
+        self.assertEqual(
+            "CustomPackageOrder({"
+            "'python': [VersionRange('1.2'), VersionRange('5.6')], "
+            "'pymum': [VersionRange('2'), VersionRange('1')]})",
+            repr(CustomPackageOrder({
+                "python": ["1.2", "5.6"],
+                "pymum": ["2", "1"],
+            })))
+
+    def test_pod(self):
+        """Validate we can save and load a CustomPackageOrder to its pod representation."""
+        self._test_pod(CustomPackageOrder({
+            "python": ["1.2", "5.6", "3.4"],
+            "pymum": ["2", "1", "3"],
+        }))
 
 
 class TestPackageOrdererList(_BaseTestPackagesOrder):
