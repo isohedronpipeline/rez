@@ -761,6 +761,104 @@ class CustomPackageOrder(PackageOrder):
         return cls(packages=data["packages"])
 
 
+class PyPAPackageOrder(PackageOrder):
+    """A package order that allows for package ordering according to PEP440/PyPA.
+
+    A prerelease argument can be specified to order prerelease versions in front
+    of release versions
+
+    For example, given the versions [1.0b2, 1.0a1, 1.0, 1.1, 1.0rc1, 1.1b2],
+    an orderer initialized with ``prerelease=""`` would give the order:
+     [1.1, 1.1b2, 1.0, 1.0rc1, 1.0b2, 1.0a1].
+    an orderer initialized with ``prerelease="b"`` would give the order:
+     [1.1b2, 1.1, 1.0b2, 1.0rc1, 1.0, 1.0a1].
+
+    """
+    name = "pypa"
+
+    def __init__(self, prerelease: Literal["", "rc", "b", "a"] = "", packages=None):
+        super().__init__(packages)
+        self.prerelease = prerelease
+
+    @staticmethod
+    def get_pypa_sort_key(version: Version, prerelease: Literal["", "rc", "b", "a"] = ""):
+        """
+        Get a sort key for sorting Versions by PyPA rules.
+
+        The prerelease argument allows for risk tolerance to be set, such that we can opt into
+        allowing preview/rc versions ahead of release versions.
+        """
+        import rez.vendor.packaging.version as pypa
+        pypa_version = pypa.parse(str(version))
+
+        key = pypa_version._key
+        if not isinstance(pypa_version, pypa.Version):
+            # Fallback to pypa legacy sorting if this isn't a compatible version format.
+            return key
+
+        # We want to allow prerelease versions up to a specific level above release versions.
+        # If the prerelease token is not set, then we will sort release versions to the front.
+        # To do this, we are going to replace the "pre" component of the sort key tuple
+        # provided by packaging.
+        key_list = list(key)
+        # The packaging key comprises (epoch, release, pre, post, dev, local)
+        pre = key_list[2]
+
+        if pre in (pypa.Infinity, -pypa.Infinity):
+            # Keep the relative order the same for packages that have no prerelease, but
+            # Make sure the first key forces them to be after our prerelease preference.
+            risk_allowance_token = pypa.Infinity
+        elif not prerelease:
+            # We have no risk tolerance, so sort prereleases to the bottom.
+            risk_allowance_token = -pypa.Infinity
+        elif pre >= (prerelease, ):
+            # This version is a preprelase, but is within our risk tolerance, so allow
+            # it to sort ahead with release versions.
+            risk_allowance_token = pypa.Infinity
+        else:
+            # This version should remain below releases, but otherwise sort the same way.
+            risk_allowance_token = -pypa.Infinity
+
+        # Insert the risk allowance sorting key at the front to force higher version
+        # prereleases below *any* release versions.
+        key_list.insert(0, risk_allowance_token)
+        return tuple(key_list)
+
+    def sort_key_implementation(self, package_name, version):
+        return self.get_pypa_sort_key(version, self.prerelease)
+
+    def __str__(self):
+        return str(self.prerelease)
+
+    def __eq__(self, other):
+        return (
+            type(self) == type(other)
+            and self.prerelease == other.prerelease
+        )
+
+    def to_pod(self):
+        """
+        Example (in yaml):
+
+        .. code-block:: yaml
+
+           type: pypa
+           prerelease: "a"
+           packages: ["foo"]
+        """
+        return {
+            "prerelease": self.prerelease,
+            "packages": self.packages,
+        }
+
+    @classmethod
+    def from_pod(cls, data):
+        return cls(
+            prerelease=data.get("prerelease"),
+            packages=data.get("packages"),
+        )
+
+
 class PackageOrderList(list):
     """A list of package orderer.
     """
