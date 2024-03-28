@@ -8,8 +8,8 @@ from typing import Dict, Iterable, List, Optional, Union
 
 from rez.config import config
 from rez.utils.data_utils import cached_class_property
-from rez.version import Version, VersionRange
-from rez.version._version import _Comparable, _ReversedComparable, _LowerBound, _UpperBound, _Bound
+from rez.vendor.version.version import (Version, VersionRange,
+    _Comparable, _ReversedComparable, _LowerBound, _UpperBound, _Bound)
 from rez.packages import iter_packages
 
 ALL_PACKAGES = "*"
