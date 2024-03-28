@@ -4,7 +4,6 @@
 
 from inspect import isclass
 from hashlib import sha1
-from typing import Any, Dict, Iterable, List, Literal, Optional, Union
 
 from rez.config import config
 from rez.exceptions import ConfigurationError
@@ -45,7 +44,7 @@ class PackageOrder(object):
     """Package reorderer base class."""
     name = None
 
-    def __init__(self, packages: Optional[Iterable[str]] = None):
+    def __init__(self, packages=None):
         """
         Args:
             packages: If not provided, PackageOrder applies to all packages.
@@ -53,7 +52,7 @@ class PackageOrder(object):
         self.packages = packages
 
     @property
-    def packages(self) -> List[str]:
+    def packages(self):
         """Returns an iterable over the list of package family names that this
         order applies to
 
@@ -63,7 +62,7 @@ class PackageOrder(object):
         return self._packages
 
     @packages.setter
-    def packages(self, packages: Union[str, Iterable[str]]):
+    def packages(self, packages):
         if packages is None:
             # Apply to all packages
             self._packages = [ALL_PACKAGES]
@@ -222,7 +221,7 @@ class SortedOrder(PackageOrder):
     name = "sorted"
 
     def __init__(self, descending, packages=None):
-        super().__init__(packages)
+        super(SortedOrder, self).__init__(packages)
         self.descending = descending
 
     def sort_key_implementation(self, package_name, version):
@@ -284,7 +283,7 @@ class PerFamilyOrder(PackageOrder):
             default_order (`PackageOrder`): Orderer to apply to any packages
                 not specified in `order_dict`.
         """
-        super().__init__(list(order_dict))
+        super(PerFamilyOrder, self).__init__(list(order_dict))
         self.order_dict = order_dict.copy()
         self.default_order = default_order
 
@@ -332,7 +331,7 @@ class PerFamilyOrder(PackageOrder):
             type: per_family
             orderers:
             - packages: ['foo', 'bah']
-              type: version_split
+              type_split
               first_version: '4.0.5'
             - packages: ['python']
               type: sorted
@@ -398,7 +397,7 @@ class VersionSplitPackageOrder(PackageOrder):
         Args:
             first_version (`Version`): Start with versions <= this value.
         """
-        super().__init__(packages)
+        super(VersionSplitPackageOrder, self).__init__(packages)
         self.first_version = first_version
 
     def sort_key_implementation(self, package_name, version):
@@ -420,7 +419,7 @@ class VersionSplitPackageOrder(PackageOrder):
 
         .. code-block:: yaml
 
-           type: version_split
+           type_split
            first_version: "3.0.0"
            packages: ["foo"]
         """
@@ -485,7 +484,7 @@ class TimestampPackageOrder(PackageOrder):
             rank (int): If non-zero, allow version changes at this rank or above
                 past the timestamp.
         """
-        super().__init__(packages)
+        super(TimestampPackageOrder, self).__init__(packages)
         self.timestamp = timestamp
         self.rank = rank
 
@@ -658,10 +657,7 @@ class CustomPackageOrder(PackageOrder):
     """
     name = "custom"
 
-    def __init__(self,
-                 packages: Dict[str, List[Union[str, VersionRange]]],
-                 version_orderer: Optional[Union[PackageOrder, Dict[str, Any]]] = None,
-                 ):
+    def __init__(self, packages, version_orderer=None):
         """
         Args:
             packages: (Dict[str, List[VersionRange]]): packages that
@@ -671,7 +667,7 @@ class CustomPackageOrder(PackageOrder):
                 How versions are sorted within version ranges.
                 Can take a pod representation of an orderer or a PackageOrder object
         """
-        super().__init__(list(packages))
+        super(CustomPackageOrder, self).__init__(list(packages))
         self.packages_dict = self._packages_from_pod(packages)
         if version_orderer and not isinstance(version_orderer, PackageOrder):
             version_orderer = from_pod(version_orderer)
@@ -691,7 +687,7 @@ class CustomPackageOrder(PackageOrder):
     def __str__(self):
         return str(self.packages_dict)
 
-    def _version_priority_key_uncached(self, package_name, version: Version):
+    def _version_priority_key_uncached(self, package_name, version):
         version_priorities = self.packages_dict[package_name]
 
         default_key = -1
@@ -724,15 +720,14 @@ class CustomPackageOrder(PackageOrder):
         return priority_sort_key, version_key
 
     @classmethod
-    def _packages_to_pod(cls, packages: Dict[str, List[Union[str, VersionRange]]]):
+    def _packages_to_pod(cls, packages):
         return {
             package: [str(v) for v in versions]
             for (package, versions) in packages.items()
         }
 
     @classmethod
-    def _packages_from_pod(cls, packages: Dict[str, List[Union[str, VersionRange]]]):
-        from rez.version import VersionRange
+    def _packages_from_pod(cls, packages):
         parsed_dict = {}
         for package, versions in packages.items():
             new_versions = []
@@ -776,12 +771,12 @@ class PyPAPackageOrder(PackageOrder):
     """
     name = "pypa"
 
-    def __init__(self, prerelease: Literal["", "rc", "b", "a"] = "", packages=None):
-        super().__init__(packages)
+    def __init__(self, prerelease="", packages=None):
+        super(PyPAPackageOrder, self).__init__(packages)
         self.prerelease = prerelease
 
     @staticmethod
-    def get_pypa_sort_key(version: Version, prerelease: Literal["", "rc", "b", "a"] = ""):
+    def get_pypa_sort_key(version, prerelease=""):
         """
         Get a sort key for sorting Versions by PyPA rules.
 
@@ -864,8 +859,8 @@ class PackageOrderList(list):
     """
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.by_package: Dict[str, PackageOrder] = {}
+        super(PackageOrderList, self).__init__(*args, **kwargs)
+        self.by_package = {}
         self.dirty = True
 
     def to_pod(self):
@@ -885,12 +880,12 @@ class PackageOrderList(list):
         return cls.from_pod(config.package_orderers)
 
     @staticmethod
-    def _to_orderer(orderer: Union[dict, PackageOrder]) -> PackageOrder:
+    def _to_orderer(orderer):
         if not isinstance(orderer, PackageOrder):
             orderer = from_pod(orderer)
         return orderer
 
-    def refresh(self) -> None:
+    def refresh(self):
         """Update the internal order-by-package mapping"""
         self.by_package = {}
         for orderer in self:
@@ -904,29 +899,29 @@ class PackageOrderList(list):
 
     def append(self, *args, **kwargs):
         self.dirty = True
-        return super().append(*args, **kwargs)
+        return super(PackageOrderList, self).append(*args, **kwargs)
 
     def extend(self, *args, **kwargs):
         self.dirty = True
-        return super().extend(*args, **kwargs)
+        return super(PackageOrderList, self).extend(*args, **kwargs)
 
     def pop(self, *args, **kwargs):
         self.dirty = True
-        return super().pop(*args, **kwargs)
+        return super(PackageOrderList, self).pop(*args, **kwargs)
 
     def remove(self, *args, **kwargs):
         self.dirty = True
-        return super().remove(*args, **kwargs)
+        return super(PackageOrderList, self).remove(*args, **kwargs)
 
     def clear(self, *args, **kwargs):
         self.dirty = True
-        return super().clear(*args, **kwargs)
+        return super(PackageOrderList, self).clear(*args, **kwargs)
 
     def insert(self, *args, **kwargs):
         self.dirty = True
-        return super().insert(*args, **kwargs)
+        return super(PackageOrderList, self).insert(*args, **kwargs)
 
-    def get(self, key: str, default: Optional[PackageOrder] = None) -> PackageOrder:
+    def get(self, key, default=None):
         """
         Get an orderer that sorts a package by name.
         """

@@ -6,6 +6,7 @@
 Test cases for package_order.py (package ordering)
 """
 import json
+import sys
 
 from rez.config import config
 from rez.package_order import (

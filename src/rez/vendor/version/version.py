@@ -64,7 +64,7 @@ class _ReversedComparable(_Common):
         return not self < other
 
     def __str__(self):
-        return f"reverse({self.value!r})"
+        return "reverse(%s)" % self.value
 
     def __repr__(self):
         return "reverse(%r)" % self.value
