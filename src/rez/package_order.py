@@ -663,14 +663,12 @@ class CustomPackageOrder(PackageOrder):
             packages: (Dict[str, List[VersionRange]]): packages that
                 this orderer should apply to, and the version priority ordering
                 for that package
-            version_orderer (Optional[Union[PackageOrder, Dict[str, Any]]]):
+            version_orderer (Optional[PackageOrder]):
                 How versions are sorted within version ranges.
                 Can take a pod representation of an orderer or a PackageOrder object
         """
         super(CustomPackageOrder, self).__init__(list(packages))
         self.packages_dict = self._packages_from_pod(packages)
-        if version_orderer and not isinstance(version_orderer, PackageOrder):
-            version_orderer = from_pod(version_orderer)
         self.version_orderer = version_orderer
 
         self._version_key_cache = {}
@@ -749,11 +747,18 @@ class CustomPackageOrder(PackageOrder):
         return parsed_dict
 
     def to_pod(self):
-        return dict(packages=self._packages_to_pod(self.packages_dict))
+        return dict(
+            packages=self._packages_to_pod(self.packages_dict),
+            version_orderer=to_pod(self.version_orderer) if self.version_orderer else None,
+        )
 
     @classmethod
     def from_pod(cls, data):
-        return cls(packages=data["packages"])
+        version_orderer = data["version_orderer"]
+        return cls(
+            packages=data["packages"],
+            version_orderer=from_pod(version_orderer) if version_orderer else None,
+        )
 
 
 class PyPAPackageOrder(PackageOrder):
@@ -771,12 +776,19 @@ class PyPAPackageOrder(PackageOrder):
     """
     name = "pypa"
 
-    def __init__(self, prerelease="", packages=None):
-        super(PyPAPackageOrder, self).__init__(packages)
-        self.prerelease = prerelease
+    pypa_prerelease_map = {
+        "alpha": "a",
+        "beta": "b",
+        "c": "rc",
+        "pre": "rc",
+        "preview": "rc",
+    }
 
-    @staticmethod
-    def get_pypa_sort_key(version, prerelease=""):
+    def __init__(self, prerelease=None, packages=None):
+        super(PyPAPackageOrder, self).__init__(packages)
+        self.prerelease = self.pypa_prerelease_map.get(prerelease, prerelease)
+
+    def sort_key_implementation(self, package_name, version):
         """
         Get a sort key for sorting Versions by PyPA rules.
 
@@ -803,10 +815,10 @@ class PyPAPackageOrder(PackageOrder):
             # Keep the relative order the same for packages that have no prerelease, but
             # Make sure the first key forces them to be after our prerelease preference.
             risk_allowance_token = pypa.Infinity
-        elif not prerelease:
+        elif not self.prerelease:
             # We have no risk tolerance, so sort prereleases to the bottom.
             risk_allowance_token = -pypa.Infinity
-        elif pre >= (prerelease, ):
+        elif pre >= (self.prerelease, ):
             # This version is a preprelase, but is within our risk tolerance, so allow
             # it to sort ahead with release versions.
             risk_allowance_token = pypa.Infinity
@@ -818,9 +830,6 @@ class PyPAPackageOrder(PackageOrder):
         # prereleases below *any* release versions.
         key_list.insert(0, risk_allowance_token)
         return tuple(key_list)
-
-    def sort_key_implementation(self, package_name, version):
-        return self.get_pypa_sort_key(version, self.prerelease)
 
     def __str__(self):
         return str(self.prerelease)
